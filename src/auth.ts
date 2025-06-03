@@ -13,11 +13,12 @@ export const {
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   providers: [
     Google({
-      clientId: process.env.GOOGLE_ID!,
-      clientSecret: process.env.GOOGLE_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
           prompt: "consent",
@@ -44,20 +45,24 @@ export const {
   },
   callbacks: {
     async signIn({ user, account, profile }) {
-      console.log('Sign in attempt:', { user, account, profile });
-      return true;
+      try {
+        console.log('Sign in attempt:', { user, account, profile });
+        return true;
+      } catch (error) {
+        console.error('Sign in error:', error);
+        return false;
+      }
     },
     async session({ session, token }) {
-      console.log('Session callback:', { session, token });
       if (session.user) {
-        session.user.id = token.sub!;
+        session.user.id = token.id as string;
       }
       return session;
     },
     async jwt({ token, user, account, profile }) {
-      console.log('JWT Callback:', { token, user, account, profile });
       if (user) {
         token.id = user.id;
+        token.email = user.email;
       }
       return token;
     }
@@ -70,7 +75,6 @@ export const {
       console.log('Sign out event:', message);
     }
   },
-  debug: true,
   trustHost: true,
   secret: process.env.NEXTAUTH_SECRET,
 }); 
