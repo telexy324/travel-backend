@@ -7,6 +7,17 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // 设置 Mapbox token
 maplibregl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
+interface Location {
+  latitude: number;
+  longitude: number;
+}
+
+interface Attraction {
+  id: string;
+  name: string;
+  location: Location;
+}
+
 interface MapProps {
   initialCenter?: [number, number];
   initialZoom?: number;
@@ -15,7 +26,7 @@ interface MapProps {
 export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const [attractions, setAttractions] = useState<any[]>([]);
+  const [attractions, setAttractions] = useState<Attraction[]>([]);
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -65,7 +76,14 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
     // 添加新标记
     attractions.forEach((attraction) => {
       const { location, name, id } = attraction;
-      const coordinates = [location.coordinates[0], location.coordinates[1]];
+      
+      // 检查 location 是否存在
+      if (!location?.latitude || !location?.longitude) {
+        console.warn(`Missing location data for attraction: ${name}`);
+        return;
+      }
+
+      const coordinates: [number, number] = [location.longitude, location.latitude];
 
       // 创建标记元素
       const el = document.createElement('div');

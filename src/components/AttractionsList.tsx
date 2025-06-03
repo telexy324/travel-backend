@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -15,49 +15,22 @@ interface Attraction {
   };
 }
 
-// 缓存数据
-let cachedAttractions: Attraction[] | null = null;
-let lastFetchTime = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
+async function fetchAttractions(): Promise<Attraction[]> {
+  const response = await fetch('/api/attractions');
+  if (!response.ok) {
+    throw new Error('Failed to fetch attractions');
+  }
+  return response.json();
+}
 
 export function AttractionsList() {
-  const [attractions, setAttractions] = useState<Attraction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: attractions, isLoading, error, refetch } = useQuery({
+    queryKey: ['attractions'],
+    queryFn: fetchAttractions,
+    staleTime: 5 * 60 * 1000, // 5分钟缓存
+  });
 
-  const fetchAttractions = useCallback(async () => {
-    // 检查缓存是否有效
-    const now = Date.now();
-    if (cachedAttractions && now - lastFetchTime < CACHE_DURATION) {
-      setAttractions(cachedAttractions);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await fetch('/api/attractions');
-      if (!response.ok) {
-        throw new Error('Failed to fetch attractions');
-      }
-      const data = await response.json();
-      // 更新缓存
-      cachedAttractions = data;
-      lastFetchTime = now;
-      setAttractions(data);
-    } catch (err) {
-      setError('获取景点列表失败');
-      console.error('Error fetching attractions:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchAttractions();
-  }, [fetchAttractions]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="p-4 text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
@@ -69,13 +42,21 @@ export function AttractionsList() {
   if (error) {
     return (
       <div className="p-4 text-center text-red-600">
-        <p>{error}</p>
+        <p>获取景点列表失败</p>
         <button
-          onClick={fetchAttractions}
+          onClick={() => refetch()}
           className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           重试
         </button>
+      </div>
+    );
+  }
+
+  if (!attractions?.length) {
+    return (
+      <div className="p-4 text-center text-gray-500">
+        <p>暂无景点数据</p>
       </div>
     );
   }
