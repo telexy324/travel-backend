@@ -5,7 +5,10 @@ import { auth } from '@/auth';
 
 export async function getAuthUser(req: NextRequest) {
   // 从请求中获取 token
-  const token = await getToken({ req });
+  const token = await getToken({ 
+    req,
+    secret: process.env.NEXTAUTH_SECRET 
+  });
   
   if (!token?.email) {
     return null;

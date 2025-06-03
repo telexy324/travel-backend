@@ -6,14 +6,14 @@ export default auth((req) => {
   const isAuthRoute = req.nextUrl.pathname.startsWith('/auth');
   const isAuthApiRoute = req.nextUrl.pathname.startsWith('/api/auth');
 
-  console.log('Middleware:', {
-    path: req.nextUrl.pathname,
-    isLoggedIn,
-    isApiRoute,
-    isAuthRoute,
-    isAuthApiRoute,
-    auth: req.auth
-  });
+  // console.log('Middleware:', {
+  //   path: req.nextUrl.pathname,
+  //   isLoggedIn,
+  //   isApiRoute,
+  //   isAuthRoute,
+  //   isAuthApiRoute,
+  //   auth: req.auth
+  // });
 
   // 允许认证相关的 API 路由
   if (isAuthApiRoute) {

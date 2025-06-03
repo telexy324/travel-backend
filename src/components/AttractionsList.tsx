@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -15,31 +15,47 @@ interface Attraction {
   };
 }
 
+// 缓存数据
+let cachedAttractions: Attraction[] | null = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
+
 export function AttractionsList() {
   const [attractions, setAttractions] = useState<Attraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchAttractions = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/attractions');
-        if (!response.ok) {
-          throw new Error('Failed to fetch attractions');
-        }
-        const data = await response.json();
-        setAttractions(data);
-      } catch (err) {
-        setError('获取景点列表失败');
-        console.error('Error fetching attractions:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchAttractions = useCallback(async () => {
+    // 检查缓存是否有效
+    const now = Date.now();
+    if (cachedAttractions && now - lastFetchTime < CACHE_DURATION) {
+      setAttractions(cachedAttractions);
+      setLoading(false);
+      return;
+    }
 
-    fetchAttractions();
+    try {
+      setLoading(true);
+      const response = await fetch('/api/attractions');
+      if (!response.ok) {
+        throw new Error('Failed to fetch attractions');
+      }
+      const data = await response.json();
+      // 更新缓存
+      cachedAttractions = data;
+      lastFetchTime = now;
+      setAttractions(data);
+    } catch (err) {
+      setError('获取景点列表失败');
+      console.error('Error fetching attractions:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchAttractions();
+  }, [fetchAttractions]);
 
   if (loading) {
     return (
@@ -54,6 +70,12 @@ export function AttractionsList() {
     return (
       <div className="p-4 text-center text-red-600">
         <p>{error}</p>
+        <button
+          onClick={fetchAttractions}
+          className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          重试
+        </button>
       </div>
     );
   }
