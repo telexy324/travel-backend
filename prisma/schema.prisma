@@ -53,6 +53,7 @@ model User {
   comments      Comment[]
   visitedAttractions Attraction[] @relation("VisitedAttractions")
   wantToVisitAttractions Attraction[] @relation("WantToVisitAttractions")
+  createdAttractions Attraction[] @relation("CreatedAttractions")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -70,12 +71,23 @@ model Attraction {
   name        String
   description String   @db.Text
   images      String[]
+  address     String   @default("")
+  city        String   @default("")
+  province    String   @default("")
+  country     String   @default("中国")
+  category    String   @default("其他")
+  price       Float    @default(0)
+  openingHours String?
+  contact     String?
+  website     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   comments    Comment[]
   visitedBy   User[]   @relation("VisitedAttractions")
   wantToVisitBy User[] @relation("WantToVisitAttractions")
   location    Location?
+  createdBy   User     @relation("CreatedAttractions", fields: [createdById], references: [id])
+  createdById String   @default("system")
 }
 
 model Location {

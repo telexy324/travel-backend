@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-
-// 设置 Mapbox token
-maplibregl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+import { useQuery } from '@tanstack/react-query';
 
 interface Location {
   latitude: number;
@@ -23,10 +21,24 @@ interface MapProps {
   initialZoom?: number;
 }
 
+// 获取景点数据的函数
+async function fetchAttractions() {
+  const response = await fetch('/api/attractions');
+  if (!response.ok) {
+    throw new Error('获取景点数据失败');
+  }
+  return response.json();
+}
+
 export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const [attractions, setAttractions] = useState<Attraction[]>([]);
+
+  // 使用 React Query 获取景点数据
+  const { data: attractions = [], error } = useQuery<Attraction[]>({
+    queryKey: ['attractions'],
+    queryFn: fetchAttractions,
+  });
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -34,26 +46,13 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
     // 初始化地图
     map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json', // 使用 MapLibre 的演示样式
+      style: 'https://api.maptiler.com/maps/basic/style.json?key=HGQGbAPTH9olP2dorNgi', // 使用 MapLibre 的演示样式
       center: initialCenter,
       zoom: initialZoom,
     });
 
     // 添加导航控件
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    // 获取景点数据
-    const fetchAttractions = async () => {
-      try {
-        const response = await fetch('/api/attractions');
-        const data = await response.json();
-        setAttractions(data);
-      } catch (error) {
-        console.error('Error fetching attractions:', error);
-      }
-    };
-
-    fetchAttractions();
 
     // 清理函数
     return () => {
@@ -107,6 +106,15 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
         .addTo(map.current!);
     });
   }, [attractions]);
+
+  // 显示错误信息
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center text-red-500">
+        加载景点数据失败
+      </div>
+    );
+  }
 
   return (
     <div ref={mapContainer} className="w-full h-full" />
