@@ -69,13 +69,21 @@ model Attraction {
   id          String   @id @default(cuid())
   name        String
   description String   @db.Text
-  location    Unsupported("geometry(Point, 4326)") // 使用 PostGIS 的 Point 类型
-  images      String[] // 存储图片URL数组
+  images      String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   comments    Comment[]
   visitedBy   User[]   @relation("VisitedAttractions")
   wantToVisitBy User[] @relation("WantToVisitAttractions")
+  location    Location?
+}
+
+model Location {
+  id          String   @id @default(cuid())
+  attraction  Attraction @relation(fields: [attractionId], references: [id])
+  attractionId String   @unique
+  // location 字段可用 raw 插入
+  geo         Unsupported("geometry(Point, 4326)")
 }
 
 model Comment {

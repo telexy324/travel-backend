@@ -1,18 +1,56 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/auth-utils';
+import { PrismaClient } from '@prisma/client';
 
-// 获取景点详情
+// 定义评论创建的数据验证模式
+const createCommentSchema = z.object({
+  content: z.string().min(1, '评论内容不能为空').max(500, '评论内容不能超过500字'),
+  rating: z.number().min(1).max(5),
+});
+
+// 定义景点更新的数据验证模式
+const updateAttractionSchema = z.object({
+  name: z.string().min(1, '景点名称不能为空').optional(),
+  description: z.string().min(1, '景点描述不能为空').optional(),
+  images: z.array(z.string().url('图片URL格式不正确')).optional(),
+  location: z.object({
+    lat: z.number(),
+    lng: z.number(),
+  }).optional(),
+  address: z.string().min(1, '地址不能为空').optional(),
+  city: z.string().min(1, '城市不能为空').optional(),
+  province: z.string().min(1, '省份不能为空').optional(),
+  country: z.string().min(1, '国家不能为空').optional(),
+  category: z.string().min(1, '分类不能为空').optional(),
+  price: z.number().min(0, '价格不能为负数').optional(),
+  openingHours: z.string().optional(),
+  contact: z.string().optional(),
+  website: z.string().url('网站URL格式不正确').optional(),
+});
+
 export async function GET(
-  request: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
     const attraction = await prisma.attraction.findUnique({
       where: { id: params.id },
       include: {
+        _count: {
+          select: {
+            visitedBy: true,
+            wantToVisitBy: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
         comments: {
           include: {
             user: {
@@ -27,18 +65,12 @@ export async function GET(
             createdAt: 'desc',
           },
         },
-        _count: {
-          select: {
-            visitedBy: true,
-            wantToVisitBy: true,
-          },
-        },
       },
     });
 
     if (!attraction) {
       return NextResponse.json(
-        { error: 'Attraction not found' },
+        { error: '景点不存在' },
         { status: 404 }
       );
     }
@@ -47,7 +79,139 @@ export async function GET(
   } catch (error) {
     console.error('Error fetching attraction:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch attraction' },
+      { error: '获取景点详情失败' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await requireAuth(req);
+    
+    // 检查景点是否存在
+    const existingAttraction = await prisma.attraction.findUnique({
+      where: { id: params.id },
+      include: { createdBy: true },
+    });
+
+    if (!existingAttraction) {
+      return NextResponse.json(
+        { error: '景点不存在' },
+        { status: 404 }
+      );
+    }
+
+    // 检查权限
+    if (existingAttraction.createdBy.id !== user.id) {
+      return NextResponse.json(
+        { error: '没有权限修改此景点' },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json();
+    const validatedData = updateAttractionSchema.parse(body);
+
+    // 准备更新数据
+    const updateData: any = { ...validatedData };
+    delete updateData.location; // 移除 location，单独处理
+
+    // 使用事务来确保数据一致性
+    const updatedAttraction = await prisma.$transaction(async (tx: PrismaClient) => {
+      // 1. 更新基本信息
+      const attraction = await tx.attraction.update({
+        where: { id: params.id },
+        data: updateData,
+      });
+
+      // 2. 如果提供了新的位置信息，使用原始 SQL 更新位置
+      if (validatedData.location) {
+        await tx.$executeRaw`
+          UPDATE "Attraction"
+          SET location = ST_SetSRID(ST_MakePoint(${validatedData.location.lng}, ${validatedData.location.lat}), 4326)
+          WHERE id = ${params.id}
+        `;
+      }
+
+      // 3. 返回更新后的完整信息
+      return tx.attraction.findUnique({
+        where: { id: params.id },
+        include: {
+          _count: {
+            select: {
+              visitedBy: true,
+              wantToVisitBy: true,
+            },
+          },
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
+        },
+      });
+    });
+
+    return NextResponse.json(updatedAttraction);
+  } catch (error) {
+    console.error('Error updating attraction:', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: '无效的景点数据' },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { error: '更新景点失败' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await requireAuth(req);
+    
+    // 检查景点是否存在
+    const existingAttraction = await prisma.attraction.findUnique({
+      where: { id: params.id },
+      include: { createdBy: true },
+    });
+
+    if (!existingAttraction) {
+      return NextResponse.json(
+        { error: '景点不存在' },
+        { status: 404 }
+      );
+    }
+
+    // 检查权限
+    if (existingAttraction.createdBy.id !== user.id) {
+      return NextResponse.json(
+        { error: '没有权限删除此景点' },
+        { status: 403 }
+      );
+    }
+
+    // 删除景点（级联删除会同时删除关联的 location）
+    await prisma.attraction.delete({
+      where: { id: params.id },
+    });
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error('Error deleting attraction:', error);
+    return NextResponse.json(
+      { error: '删除景点失败' },
       { status: 500 }
     );
   }
@@ -55,29 +219,37 @@ export async function GET(
 
 // 添加评论
 export async function POST(
-  request: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await requireAuth(req);
+    
+    // 检查景点是否存在
+    const existingAttraction = await prisma.attraction.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!existingAttraction) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: '景点不存在' },
+        { status: 404 }
       );
     }
 
-    const body = await request.json();
-    const commentSchema = z.object({
-      content: z.string().min(1).max(1000),
-    });
-    const validatedData = commentSchema.parse(body);
+    const body = await req.json();
+    const validatedData = createCommentSchema.parse(body);
 
     const comment = await prisma.comment.create({
       data: {
         content: validatedData.content,
-        userId: session.user.id,
-        attractionId: params.id,
+        rating: validatedData.rating,
+        attraction: {
+          connect: { id: params.id },
+        },
+        user: {
+          connect: { id: user.id },
+        },
       },
       include: {
         user: {
@@ -90,84 +262,17 @@ export async function POST(
       },
     });
 
-    return NextResponse.json(comment);
+    return NextResponse.json(comment, { status: 201 });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input data', details: error.errors },
-        { status: 400 }
-      );
-    }
     console.error('Error creating comment:', error);
-    return NextResponse.json(
-      { error: 'Failed to create comment' },
-      { status: 500 }
-    );
-  }
-}
-
-// 标记"已到访"或"我想去"
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const body = await request.json();
-    const actionSchema = z.object({
-      action: z.enum(['visit', 'wantToVisit']),
-    });
-    const { action } = actionSchema.parse(body);
-
-    const attraction = await prisma.attraction.findUnique({
-      where: { id: params.id },
-    });
-
-    if (!attraction) {
-      return NextResponse.json(
-        { error: 'Attraction not found' },
-        { status: 404 }
-      );
-    }
-
-    if (action === 'visit') {
-      await prisma.attraction.update({
-        where: { id: params.id },
-        data: {
-          visitedBy: {
-            connect: { id: session.user.id },
-          },
-        },
-      });
-    } else {
-      await prisma.attraction.update({
-        where: { id: params.id },
-        data: {
-          wantToVisitBy: {
-            connect: { id: session.user.id },
-          },
-        },
-      });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Invalid input data', details: error.errors },
+        { error: '无效的评论数据' },
         { status: 400 }
       );
     }
-    console.error('Error updating attraction status:', error);
     return NextResponse.json(
-      { error: 'Failed to update attraction status' },
+      { error: '创建评论失败' },
       { status: 500 }
     );
   }
