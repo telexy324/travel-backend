@@ -2,7 +2,50 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-utils';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+
+// 定义位置数据的类型
+interface LocationData {
+  geo: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+// 定义景点数据的类型
+type AttractionWithLocation = {
+  id: string;
+  name: string;
+  description: string;
+  images: string[];
+  address: string;
+  city: string;
+  province: string;
+  country: string;
+  category: string;
+  price: number;
+  openingHours?: string | null;
+  contact?: string | null;
+  website?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  location: LocationData | null;
+  _count: {
+    visitedBy: number;
+    wantToVisitBy: number;
+  };
+  createdBy: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  };
+};
+
+// 定义原始SQL查询返回的位置数据类型
+interface LocationQueryResult {
+  id: string;
+  location: LocationData;
+}
 
 // 定义景点创建的数据验证模式
 const createAttractionSchema = z.object({
@@ -44,51 +87,91 @@ export async function GET(req: NextRequest) {
     const validatedQuery = querySchema.parse(query);
     
     // 获取景点列表
-    const attractions = await prisma.$queryRaw`
-      SELECT 
-        a.*,
-        json_build_object(
-          'geo', json_build_object(
-            'latitude', ST_Y(l.geo::geometry),
-            'longitude', ST_X(l.geo::geometry)
-          )
-        ) as location,
-        (
-          SELECT json_build_object(
-            'visitedBy', COUNT(DISTINCT v."A"),
-            'wantToVisitBy', COUNT(DISTINCT w."A")
-          )
-          FROM "Attraction" a2
-          LEFT JOIN "_VisitedAttractions" v ON a2.id = v."B"
-          LEFT JOIN "_WantToVisitAttractions" w ON a2.id = w."B"
-          WHERE a2.id = a.id
-        ) as _count,
-        (
-          SELECT json_build_object(
-            'id', u.id,
-            'name', u.name,
-            'image', u.image
-          )
-          FROM "User" u
-          WHERE u.id = a."createdById"
-        ) as createdBy
-      FROM "Attraction" a
-      LEFT JOIN "Location" l ON a.id = l."attractionId"
-      WHERE 1=1
-      ${validatedQuery.city ? Prisma.sql`AND a.city = ${validatedQuery.city}` : Prisma.sql``}
-      ${validatedQuery.category ? Prisma.sql`AND a.category = ${validatedQuery.category}` : Prisma.sql``}
-      ${validatedQuery.minPrice ? Prisma.sql`AND a.price >= ${parseFloat(validatedQuery.minPrice)}` : Prisma.sql``}
-      ${validatedQuery.maxPrice ? Prisma.sql`AND a.price <= ${parseFloat(validatedQuery.maxPrice)}` : Prisma.sql``}
-      ${validatedQuery.lat && validatedQuery.lng && validatedQuery.radius 
-        ? Prisma.sql`AND ST_DWithin(
-            l.geo::geography,
-            ST_SetSRID(ST_MakePoint(${parseFloat(validatedQuery.lng)}, ${parseFloat(validatedQuery.lat)}), 4326)::geography,
-            ${parseFloat(validatedQuery.radius) * 1000}
-          )`
-        : Prisma.sql``}
-    `;
+    const attractions = await prisma.attraction.findMany({
+      where: {
+        ...(validatedQuery.city && { city: validatedQuery.city }),
+        ...(validatedQuery.category && { category: validatedQuery.category }),
+        ...(validatedQuery.minPrice && { price: { gte: parseFloat(validatedQuery.minPrice) } }),
+        ...(validatedQuery.maxPrice && { price: { lte: parseFloat(validatedQuery.maxPrice) } }),
+        location: {
+          isNot: null, // 只获取有位置数据的景点
+        },
+      },
+      include: {
+        _count: {
+          select: {
+            visitedBy: true,
+            wantToVisitBy: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
+      },
+    });
+
+    // 转换类型
+    const attractionsWithLocation: AttractionWithLocation[] = attractions.map(attraction => ({
+      ...attraction,
+      location: null, // 初始化为 null，后续会被更新
+    }));
+
+    // 如果提供了地理位置参数，使用原始 SQL 查询位置数据
+    if (validatedQuery.lat && validatedQuery.lng && validatedQuery.radius) {
+      const lat = parseFloat(validatedQuery.lat);
+      const lng = parseFloat(validatedQuery.lng);
+      const radius = parseFloat(validatedQuery.radius);
+
+      const locations = await prisma.$queryRaw<LocationQueryResult[]>`
+        SELECT 
+          a.id,
+          json_build_object(
+            'geo', json_build_object(
+              'latitude', ST_Y(l.geo::geometry),
+              'longitude', ST_X(l.geo::geometry)
+            )
+          ) as location
+        FROM "Attraction" a
+        INNER JOIN "Location" l ON a.id = l."attractionId"
+        WHERE ST_DWithin(
+          l.geo::geography,
+          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+          ${radius * 1000}
+        )
+      `;
+
+      // 合并位置数据到景点信息中
+      const locationMap = new Map(locations.map((loc: LocationQueryResult) => [loc.id, loc.location]));
+      attractionsWithLocation.forEach((attraction) => {
+        attraction.location = locationMap.get(attraction.id) || null;
+      });
+    } else {
+      // 如果没有地理位置参数，获取所有景点的位置数据
+      const locations = await prisma.$queryRaw<LocationQueryResult[]>`
+        SELECT 
+          a.id,
+          json_build_object(
+            'geo', json_build_object(
+              'latitude', ST_Y(l.geo::geometry),
+              'longitude', ST_X(l.geo::geometry)
+            )
+          ) as location
+        FROM "Attraction" a
+        INNER JOIN "Location" l ON a.id = l."attractionId"
+      `;
+
+      // 合并位置数据到景点信息中
+      const locationMap = new Map(locations.map((loc: LocationQueryResult) => [loc.id, loc.location]));
+      attractionsWithLocation.forEach((attraction) => {
+        attraction.location = locationMap.get(attraction.id) || null;
+      });
+    }
     
-    return NextResponse.json(attractions);
+    return NextResponse.json(attractionsWithLocation);
   } catch (error) {
     console.error('Error fetching attractions:', error);
     if (error instanceof z.ZodError) {
@@ -146,7 +229,7 @@ export async function POST(req: NextRequest) {
       `;
 
       // 3. 返回完整的景点信息
-      return tx.attraction.findUnique({
+      const completeAttraction = await tx.attraction.findUnique({
         where: { id: newAttraction.id },
         include: {
           _count: {
@@ -164,6 +247,12 @@ export async function POST(req: NextRequest) {
           },
         },
       });
+
+      // 转换为正确的类型
+      return {
+        ...completeAttraction,
+        location: null, // 初始化为 null，后续会被更新
+      } as AttractionWithLocation;
     });
     
     return NextResponse.json(attraction, { status: 201 });

@@ -6,18 +6,22 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 
 interface Location {
-  geo: Geo
-}
-
-interface Geo {
-  latitude: number;
-  longitude: number;
+  geo: {
+    latitude: number;
+    longitude: number;
+  };
 }
 
 interface Attraction {
   id: string;
   name: string;
+  description: string;
+  images: string[];
   location: Location;
+  _count: {
+    visitedBy: number;
+    wantToVisitBy: number;
+  };
 }
 
 interface MapProps {
@@ -78,7 +82,7 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
 
     // 添加新标记
     attractions.forEach((attraction) => {
-      const { location, name, id } = attraction;
+      const { location, name, id, description, images, _count } = attraction;
       
       // 检查 location 是否存在
       if (!location?.geo) {
@@ -97,11 +101,22 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
       el.style.backgroundSize = 'cover';
       el.style.cursor = 'pointer';
 
+      // 创建弹出框内容
+      const popupContent = `
+        <div class="p-2">
+          <h3 class="font-bold text-lg">${name}</h3>
+          ${images[0] ? `<img src="${images[0]}" alt="${name}" class="w-full h-32 object-cover my-2 rounded">` : ''}
+          <p class="text-sm text-gray-600 mb-2">${description}</p>
+          <div class="flex justify-between text-sm text-gray-500">
+            <span>已访问: ${_count.visitedBy}</span>
+            <span>想去: ${_count.wantToVisitBy}</span>
+          </div>
+          <a href="/attractions/${id}" class="block text-center mt-2 text-blue-500 hover:underline">查看详情</a>
+        </div>
+      `;
+
       // 创建弹出框
-      const popup = new maplibregl.Popup({ offset: 25 }).setHTML(`
-        <h3 class="font-bold">${name}</h3>
-        <a href="/attractions/${id}" class="text-blue-500 hover:underline">查看详情</a>
-      `);
+      const popup = new maplibregl.Popup({ offset: 25 }).setHTML(popupContent);
 
       // 添加标记
       new maplibregl.Marker(el)
