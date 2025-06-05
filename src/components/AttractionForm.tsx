@@ -9,26 +9,47 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 
-const attractionSchema = z.object({
+// 定义表单数据类型
+const attractionFormSchema = z.object({
   name: z.string().min(1, '景点名称不能为空'),
   description: z.string().min(1, '景点描述不能为空'),
   images: z.string().min(1, '至少需要一张图片'),
-  address: z.string().min(1, '地址不能为空'),
-  city: z.string().min(1, '城市不能为空'),
-  province: z.string().min(1, '省份不能为空'),
-  country: z.string().min(1, '国家不能为空'),
-  category: z.string().min(1, '分类不能为空'),
-  price: z.string().transform((val) => parseFloat(val)),
+  address: z.string().min(1, '地址不能为空').optional(),
+  city: z.string().min(1, '城市不能为空').optional(),
+  province: z.string().min(1, '省份不能为空').optional(),
+  country: z.string().min(1, '国家不能为空').optional(),
+  category: z.string().min(1, '分类不能为空').optional(),
+  price: z.string().min(1, '价格不能为空').optional(),
   openingHours: z.string().optional(),
   contact: z.string().optional(),
   website: z.string().url('网站URL格式不正确').optional(),
   location: z.object({
-    lat: z.string().transform((val) => parseFloat(val)),
-    lng: z.string().transform((val) => parseFloat(val)),
+    lat: z.string().min(1, '纬度不能为空'),
+    lng: z.string().min(1, '经度不能为空'),
   }),
 });
 
-type AttractionFormData = z.infer<typeof attractionSchema>;
+// 定义 API 数据类型
+type AttractionApiData = {
+  name: string;
+  description: string;
+  images: string[];
+  address?: string;
+  city?: string;
+  province?: string;
+  country?: string;
+  category?: string;
+  price?: number;
+  openingHours?: string;
+  contact?: string;
+  website?: string;
+  location: {
+    lat: number;
+    lng: number;
+  };
+};
+
+type AttractionFormData = z.infer<typeof attractionFormSchema>;
 
 interface AttractionFormProps {
   attraction?: {
@@ -58,11 +79,20 @@ interface AttractionFormProps {
 export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<AttractionFormData>({
-    resolver: zodResolver(attractionSchema),
+    resolver: zodResolver(attractionFormSchema),
     defaultValues: attraction ? {
-      ...attraction,
-      price: attraction.price.toString(),
+      name: attraction.name,
+      description: attraction.description,
       images: attraction.images.join(','),
+      address: attraction.address,
+      city: attraction.city,
+      province: attraction.province,
+      country: attraction.country,
+      category: attraction.category,
+      price: attraction.price.toString(),
+      openingHours: attraction.openingHours || undefined,
+      contact: attraction.contact || undefined,
+      website: attraction.website || undefined,
       location: attraction.location ? {
         lat: attraction.location.geo.latitude.toString(),
         lng: attraction.location.geo.longitude.toString(),
@@ -73,6 +103,29 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
   const onSubmit = async (data: AttractionFormData) => {
     try {
       setIsSubmitting(true);
+
+      // 转换表单数据为 API 数据
+      const apiData: AttractionApiData = {
+        name: data.name,
+        description: data.description,
+        images: data.images.split(',').map(url => url.trim()),
+        location: {
+          lat: parseFloat(data.location.lat),
+          lng: parseFloat(data.location.lng),
+        },
+      };
+
+      // 添加可选字段
+      if (data.address) apiData.address = data.address;
+      if (data.city) apiData.city = data.city;
+      if (data.province) apiData.province = data.province;
+      if (data.country) apiData.country = data.country;
+      if (data.category) apiData.category = data.category;
+      if (data.price) apiData.price = parseFloat(data.price);
+      if (data.openingHours) apiData.openingHours = data.openingHours;
+      if (data.contact) apiData.contact = data.contact;
+      if (data.website) apiData.website = data.website;
+
       const response = await fetch(
         attraction ? `/api/attractions/${attraction.id}` : '/api/attractions',
         {
@@ -80,10 +133,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            ...data,
-            images: data.images.split(',').map(url => url.trim()),
-          }),
+          body: JSON.stringify(apiData),
         }
       );
 
@@ -101,7 +151,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[calc(90vh-8rem)] overflow-y-auto pr-4">
       <div>
         <label className="block text-sm font-medium mb-1">景点名称</label>
         <Input {...register('name')} />
@@ -112,7 +162,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
 
       <div>
         <label className="block text-sm font-medium mb-1">描述</label>
-        <Textarea {...register('description')} />
+        <Textarea {...register('description')} className="min-h-[100px]" />
         {errors.description && (
           <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
         )}
@@ -220,9 +270,11 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
         )}
       </div>
 
-      <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? '提交中...' : attraction ? '更新' : '创建'}
-      </Button>
+      <div className="pt-4">
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? '提交中...' : attraction ? '更新' : '创建'}
+        </Button>
+      </div>
     </form>
   );
 } 

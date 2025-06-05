@@ -104,7 +104,7 @@ export default function AttractionsAdminPage() {
           <DialogTrigger asChild>
             <Button>添加景点</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>添加新景点</DialogTitle>
             </DialogHeader>
@@ -161,7 +161,7 @@ export default function AttractionsAdminPage() {
       </Table>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑景点</DialogTitle>
           </DialogHeader>
