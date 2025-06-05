@@ -6,6 +6,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 
 interface Location {
+  geo: Geo
+}
+
+interface Geo {
   latitude: number;
   longitude: number;
 }
@@ -64,7 +68,7 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
 
   // 添加景点标记
   useEffect(() => {
-    if (!map.current || !attractions.length) return;
+    if (!map.current) return;
 
     // 清除现有标记
     const markers = document.getElementsByClassName('marker');
@@ -77,12 +81,12 @@ export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }
       const { location, name, id } = attraction;
       
       // 检查 location 是否存在
-      if (!location?.latitude || !location?.longitude) {
+      if (!location?.geo) {
         console.warn(`Missing location data for attraction: ${name}`);
         return;
       }
 
-      const coordinates: [number, number] = [location.longitude, location.latitude];
+      const coordinates: [number, number] = [location.geo.longitude, location.geo.latitude];
 
       // 创建标记元素
       const el = document.createElement('div');

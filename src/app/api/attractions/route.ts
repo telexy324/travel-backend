@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-utils';
+import { Prisma } from '@prisma/client';
 
 // 定义景点创建的数据验证模式
 const createAttractionSchema = z.object({
@@ -42,60 +43,50 @@ export async function GET(req: NextRequest) {
     // 验证查询参数
     const validatedQuery = querySchema.parse(query);
     
-    // 构建查询条件
-    const where: any = {};
-    
-    // 如果提供了地理位置参数，添加地理空间查询
-    if (validatedQuery.lat && validatedQuery.lng && validatedQuery.radius) {
-      const lat = parseFloat(validatedQuery.lat);
-      const lng = parseFloat(validatedQuery.lng);
-      const radius = parseFloat(validatedQuery.radius);
-      
-      where.location = {
-        near: {
-          lat,
-          lng,
-          maxDistance: radius * 1000, // 转换为米
-        },
-      };
-    }
-
-    // 添加其他过滤条件
-    if (validatedQuery.city) {
-      where.city = validatedQuery.city;
-    }
-    if (validatedQuery.category) {
-      where.category = validatedQuery.category;
-    }
-    if (validatedQuery.minPrice || validatedQuery.maxPrice) {
-      where.price = {};
-      if (validatedQuery.minPrice) {
-        where.price.gte = parseFloat(validatedQuery.minPrice);
-      }
-      if (validatedQuery.maxPrice) {
-        where.price.lte = parseFloat(validatedQuery.maxPrice);
-      }
-    }
-    
     // 获取景点列表
-    const attractions = await prisma.attraction.findMany({
-      where,
-      include: {
-        _count: {
-          select: {
-            visitedBy: true,
-            wantToVisitBy: true,
-          },
-        },
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-      },
-    });
+    const attractions = await prisma.$queryRaw`
+      SELECT 
+        a.*,
+        json_build_object(
+          'geo', json_build_object(
+            'latitude', ST_Y(l.geo::geometry),
+            'longitude', ST_X(l.geo::geometry)
+          )
+        ) as location,
+        (
+          SELECT json_build_object(
+            'visitedBy', COUNT(DISTINCT v."A"),
+            'wantToVisitBy', COUNT(DISTINCT w."A")
+          )
+          FROM "Attraction" a2
+          LEFT JOIN "_VisitedAttractions" v ON a2.id = v."B"
+          LEFT JOIN "_WantToVisitAttractions" w ON a2.id = w."B"
+          WHERE a2.id = a.id
+        ) as _count,
+        (
+          SELECT json_build_object(
+            'id', u.id,
+            'name', u.name,
+            'image', u.image
+          )
+          FROM "User" u
+          WHERE u.id = a."createdById"
+        ) as createdBy
+      FROM "Attraction" a
+      LEFT JOIN "Location" l ON a.id = l."attractionId"
+      WHERE 1=1
+      ${validatedQuery.city ? Prisma.sql`AND a.city = ${validatedQuery.city}` : Prisma.sql``}
+      ${validatedQuery.category ? Prisma.sql`AND a.category = ${validatedQuery.category}` : Prisma.sql``}
+      ${validatedQuery.minPrice ? Prisma.sql`AND a.price >= ${parseFloat(validatedQuery.minPrice)}` : Prisma.sql``}
+      ${validatedQuery.maxPrice ? Prisma.sql`AND a.price <= ${parseFloat(validatedQuery.maxPrice)}` : Prisma.sql``}
+      ${validatedQuery.lat && validatedQuery.lng && validatedQuery.radius 
+        ? Prisma.sql`AND ST_DWithin(
+            l.geo::geography,
+            ST_SetSRID(ST_MakePoint(${parseFloat(validatedQuery.lng)}, ${parseFloat(validatedQuery.lat)}), 4326)::geography,
+            ${parseFloat(validatedQuery.radius) * 1000}
+          )`
+        : Prisma.sql``}
+    `;
     
     return NextResponse.json(attractions);
   } catch (error) {
