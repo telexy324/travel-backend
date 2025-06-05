@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    domains: ['example.com'], // 添加允许的图片域名
+    domains: ['example.com', 'vcahotiaoaizigwudfnn.supabase.co'], // 添加允许的图片域名
   },
 };
 

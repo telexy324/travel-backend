@@ -1,0 +1,228 @@
+'use client';
+
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+
+const attractionSchema = z.object({
+  name: z.string().min(1, '景点名称不能为空'),
+  description: z.string().min(1, '景点描述不能为空'),
+  images: z.string().min(1, '至少需要一张图片'),
+  address: z.string().min(1, '地址不能为空'),
+  city: z.string().min(1, '城市不能为空'),
+  province: z.string().min(1, '省份不能为空'),
+  country: z.string().min(1, '国家不能为空'),
+  category: z.string().min(1, '分类不能为空'),
+  price: z.string().transform((val) => parseFloat(val)),
+  openingHours: z.string().optional(),
+  contact: z.string().optional(),
+  website: z.string().url('网站URL格式不正确').optional(),
+  location: z.object({
+    lat: z.string().transform((val) => parseFloat(val)),
+    lng: z.string().transform((val) => parseFloat(val)),
+  }),
+});
+
+type AttractionFormData = z.infer<typeof attractionSchema>;
+
+interface AttractionFormProps {
+  attraction?: {
+    id: string;
+    name: string;
+    description: string;
+    images: string[];
+    address: string;
+    city: string;
+    province: string;
+    country: string;
+    category: string;
+    price: number;
+    openingHours?: string | null;
+    contact?: string | null;
+    website?: string | null;
+    location: {
+      geo: {
+        latitude: number;
+        longitude: number;
+      };
+    } | null;
+  };
+  onSuccess: () => void;
+}
+
+export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { register, handleSubmit, formState: { errors } } = useForm<AttractionFormData>({
+    resolver: zodResolver(attractionSchema),
+    defaultValues: attraction ? {
+      ...attraction,
+      price: attraction.price.toString(),
+      images: attraction.images.join(','),
+      location: attraction.location ? {
+        lat: attraction.location.geo.latitude.toString(),
+        lng: attraction.location.geo.longitude.toString(),
+      } : undefined,
+    } : undefined,
+  });
+
+  const onSubmit = async (data: AttractionFormData) => {
+    try {
+      setIsSubmitting(true);
+      const response = await fetch(
+        attraction ? `/api/attractions/${attraction.id}` : '/api/attractions',
+        {
+          method: attraction ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...data,
+            images: data.images.split(',').map(url => url.trim()),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(attraction ? '更新景点失败' : '创建景点失败');
+      }
+
+      toast.success(attraction ? '更新成功' : '创建成功');
+      onSuccess();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '操作失败');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-1">景点名称</label>
+        <Input {...register('name')} />
+        {errors.name && (
+          <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">描述</label>
+        <Textarea {...register('description')} />
+        {errors.description && (
+          <p className="text-red-500 text-sm mt-1">{errors.description.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">图片URL（用逗号分隔）</label>
+        <Input {...register('images')} />
+        {errors.images && (
+          <p className="text-red-500 text-sm mt-1">{errors.images.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">地址</label>
+        <Input {...register('address')} />
+        {errors.address && (
+          <p className="text-red-500 text-sm mt-1">{errors.address.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">省份</label>
+          <Input {...register('province')} />
+          {errors.province && (
+            <p className="text-red-500 text-sm mt-1">{errors.province.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">城市</label>
+          <Input {...register('city')} />
+          {errors.city && (
+            <p className="text-red-500 text-sm mt-1">{errors.city.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">国家</label>
+          <Input {...register('country')} />
+          {errors.country && (
+            <p className="text-red-500 text-sm mt-1">{errors.country.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">分类</label>
+          <Input {...register('category')} />
+          {errors.category && (
+            <p className="text-red-500 text-sm mt-1">{errors.category.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">价格</label>
+          <Input type="number" step="0.01" {...register('price')} />
+          {errors.price && (
+            <p className="text-red-500 text-sm mt-1">{errors.price.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">纬度</label>
+          <Input type="number" step="0.000001" {...register('location.lat')} />
+          {errors.location?.lat && (
+            <p className="text-red-500 text-sm mt-1">{errors.location.lat.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">经度</label>
+          <Input type="number" step="0.000001" {...register('location.lng')} />
+          {errors.location?.lng && (
+            <p className="text-red-500 text-sm mt-1">{errors.location.lng.message}</p>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">营业时间</label>
+        <Input {...register('openingHours')} />
+        {errors.openingHours && (
+          <p className="text-red-500 text-sm mt-1">{errors.openingHours.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">联系方式</label>
+        <Input {...register('contact')} />
+        {errors.contact && (
+          <p className="text-red-500 text-sm mt-1">{errors.contact.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">网站</label>
+        <Input {...register('website')} />
+        {errors.website && (
+          <p className="text-red-500 text-sm mt-1">{errors.website.message}</p>
+        )}
+      </div>
+
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? '提交中...' : attraction ? '更新' : '创建'}
+      </Button>
+    </form>
+  );
+} 

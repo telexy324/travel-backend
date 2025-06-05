@@ -12,19 +12,19 @@ const createCommentSchema = z.object({
 
 // 定义景点更新的数据验证模式
 const updateAttractionSchema = z.object({
-  name: z.string().min(1, '景点名称不能为空').optional(),
-  description: z.string().min(1, '景点描述不能为空').optional(),
-  images: z.array(z.string().url('图片URL格式不正确')).optional(),
+  name: z.string().min(1, '景点名称不能为空'),
+  description: z.string().min(1, '景点描述不能为空'),
+  images: z.array(z.string().url('图片URL格式不正确')),
   location: z.object({
     lat: z.number(),
     lng: z.number(),
-  }).optional(),
-  address: z.string().min(1, '地址不能为空').optional(),
-  city: z.string().min(1, '城市不能为空').optional(),
-  province: z.string().min(1, '省份不能为空').optional(),
-  country: z.string().min(1, '国家不能为空').optional(),
-  category: z.string().min(1, '分类不能为空').optional(),
-  price: z.number().min(0, '价格不能为负数').optional(),
+  }),
+  address: z.string().min(1, '地址不能为空'),
+  city: z.string().min(1, '城市不能为空'),
+  province: z.string().min(1, '省份不能为空'),
+  country: z.string().min(1, '国家不能为空'),
+  category: z.string().min(1, '分类不能为空'),
+  price: z.number().min(0, '价格不能为负数'),
   openingHours: z.string().optional(),
   contact: z.string().optional(),
   website: z.string().url('网站URL格式不正确').optional(),
@@ -90,12 +90,18 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    // 验证用户身份
     const user = await requireAuth(req);
+    
+    // 解析请求数据
+    const body = await req.json();
+    
+    // 验证数据
+    const validatedData = updateAttractionSchema.parse(body);
     
     // 检查景点是否存在
     const existingAttraction = await prisma.attraction.findUnique({
       where: { id: params.id },
-      include: { createdBy: true },
     });
 
     if (!existingAttraction) {
@@ -106,38 +112,42 @@ export async function PUT(
     }
 
     // 检查权限
-    if (existingAttraction.createdBy.id !== user.id) {
+    if (existingAttraction.createdById !== user.id) {
       return NextResponse.json(
         { error: '没有权限修改此景点' },
         { status: 403 }
       );
     }
 
-    const body = await req.json();
-    const validatedData = updateAttractionSchema.parse(body);
-
-    // 准备更新数据
-    const updateData: any = { ...validatedData };
-    delete updateData.location; // 移除 location，单独处理
-
     // 使用事务来确保数据一致性
-    const updatedAttraction = await prisma.$transaction(async (tx: PrismaClient) => {
-      // 1. 更新基本信息
-      const attraction = await tx.attraction.update({
+    const attraction = await prisma.$transaction(async (tx) => {
+      // 1. 更新景点基本信息
+      const updatedAttraction = await tx.attraction.update({
         where: { id: params.id },
-        data: updateData,
+        data: {
+          name: validatedData.name,
+          description: validatedData.description,
+          images: validatedData.images,
+          address: validatedData.address,
+          city: validatedData.city,
+          province: validatedData.province,
+          country: validatedData.country,
+          category: validatedData.category,
+          price: validatedData.price,
+          openingHours: validatedData.openingHours,
+          contact: validatedData.contact,
+          website: validatedData.website,
+        },
       });
 
-      // 2. 如果提供了新的位置信息，使用原始 SQL 更新位置
-      if (validatedData.location) {
-        await tx.$executeRaw`
-          UPDATE "Attraction"
-          SET location = ST_SetSRID(ST_MakePoint(${validatedData.location.lng}, ${validatedData.location.lat}), 4326)
-          WHERE id = ${params.id}
-        `;
-      }
+      // 2. 更新位置数据
+      await tx.$executeRaw`
+        UPDATE "Location"
+        SET geo = ST_SetSRID(ST_MakePoint(${validatedData.location.lng}, ${validatedData.location.lat}), 4326)
+        WHERE "attractionId" = ${params.id}
+      `;
 
-      // 3. 返回更新后的完整信息
+      // 3. 返回完整的景点信息
       return tx.attraction.findUnique({
         where: { id: params.id },
         include: {
@@ -158,7 +168,7 @@ export async function PUT(
       });
     });
 
-    return NextResponse.json(updatedAttraction);
+    return NextResponse.json(attraction);
   } catch (error) {
     console.error('Error updating attraction:', error);
     if (error instanceof z.ZodError) {
@@ -179,12 +189,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    // 验证用户身份
     const user = await requireAuth(req);
     
     // 检查景点是否存在
     const existingAttraction = await prisma.attraction.findUnique({
       where: { id: params.id },
-      include: { createdBy: true },
     });
 
     if (!existingAttraction) {
@@ -195,14 +205,14 @@ export async function DELETE(
     }
 
     // 检查权限
-    if (existingAttraction.createdBy.id !== user.id) {
+    if (existingAttraction.createdById !== user.id) {
       return NextResponse.json(
         { error: '没有权限删除此景点' },
         { status: 403 }
       );
     }
 
-    // 删除景点（级联删除会同时删除关联的 location）
+    // 删除景点
     await prisma.attraction.delete({
       where: { id: params.id },
     });
