@@ -1,38 +1,21 @@
 import { auth } from '@/auth';
-
-export default auth((req) => {
-  const isLoggedIn = !!req.auth;
-  const isApiRoute = req.nextUrl.pathname.startsWith('/api');
-  const isAuthRoute = req.nextUrl.pathname.startsWith('/auth');
-  const isAuthApiRoute = req.nextUrl.pathname.startsWith('/api/auth');
-
-  // console.log('Middleware:', {
-  //   path: req.nextUrl.pathname,
-  //   isLoggedIn,
-  //   isApiRoute,
-  //   isAuthRoute,
-  //   isAuthApiRoute,
-  //   auth: req.auth
-  // });
-
-  // 允许认证相关的 API 路由
-  if (isAuthApiRoute) {
-    return undefined;
-  }
-
-  // 允许认证相关的页面路由
-  if (isAuthRoute) {
-    return undefined;
-  }
-
-  if (isApiRoute && !isLoggedIn) {
-    return Response.json(
-      { error: '未授权' },
-      { status: 401 }
-    );
-  }
-});
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
 export const config = {
-  matcher: ['/((?!.+\\.[\\w]+$|_next).*)', '/', '/(api|trpc)(.*)'],
-}; 
+  matcher: [
+    '/admin/:path*',
+    '/api/attractions/:path*',
+    '/api/comments/:path*',
+  ],
+};
+
+export async function middleware(request: NextRequest) {
+  const session = await auth();
+  
+  if (!session?.user) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  return NextResponse.next();
+} 

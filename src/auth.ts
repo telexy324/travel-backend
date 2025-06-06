@@ -3,12 +3,23 @@ import Google from 'next-auth/providers/google';
 import GitHub from 'next-auth/providers/github';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@/lib/prisma';
+import { authOptions } from '@/lib/auth';
 
 export const {
   handlers: { GET, POST },
   auth,
   signIn,
   signOut,
+} = NextAuth({
+  adapter: PrismaAdapter(prisma),
+  ...authOptions,
+});
+
+export const {
+  handlers: { GET: authGET, POST: authPOST },
+  auth: authAuth,
+  signIn: authSignIn,
+  signOut: authSignOut,
 } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: {
