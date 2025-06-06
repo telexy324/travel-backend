@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-utils';
 import type { Prisma } from '@prisma/client';
+import { attractionBackendSchema } from '@/types/dtos';
 
 // 定义位置数据的类型
 interface LocationData {
@@ -48,24 +49,24 @@ interface LocationQueryResult {
 }
 
 // 定义景点创建的数据验证模式
-const createAttractionSchema = z.object({
-  name: z.string().min(1, '景点名称不能为空'),
-  description: z.string().min(1, '景点描述不能为空'),
-  images: z.array(z.string().url('图片URL格式不正确')),
-  location: z.object({
-    lat: z.number(),
-    lng: z.number(),
-  }),
-  address: z.string().min(1, '地址不能为空'),
-  city: z.string().min(1, '城市不能为空'),
-  province: z.string().min(1, '省份不能为空'),
-  country: z.string().min(1, '国家不能为空'),
-  category: z.string().min(1, '分类不能为空'),
-  price: z.number().min(0, '价格不能为负数'),
-  openingHours: z.string().optional(),
-  contact: z.string().optional(),
-  website: z.string().url('网站URL格式不正确').optional(),
-});
+// const createAttractionSchema = z.object({
+//   name: z.string().min(1, '景点名称不能为空'),
+//   description: z.string().min(1, '景点描述不能为空'),
+//   images: z.array(z.string().url('图片URL格式不正确')),
+//   location: z.object({
+//     lat: z.number(),
+//     lng: z.number(),
+//   }),
+//   address: z.string().min(1, '地址不能为空'),
+//   city: z.string().min(1, '城市不能为空'),
+//   province: z.string().min(1, '省份不能为空'),
+//   country: z.string().min(1, '国家不能为空'),
+//   category: z.string().min(1, '分类不能为空'),
+//   price: z.number().min(0, '价格不能为负数'),
+//   openingHours: z.string().optional(),
+//   contact: z.string().optional(),
+//   website: z.string().url('网站URL格式不正确').optional(),
+// });
 
 // 定义景点查询参数的数据验证模式
 const querySchema = z.object({
@@ -196,7 +197,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     
     // 验证数据
-    const validatedData = createAttractionSchema.parse(body);
+    const validatedData = attractionBackendSchema.parse(body);
     
     // 使用事务来确保数据一致性
     const attraction = await prisma.$transaction(async (tx) => {

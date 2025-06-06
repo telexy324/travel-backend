@@ -8,26 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-
-// 定义表单数据类型
-const attractionFormSchema = z.object({
-  name: z.string().min(1, '景点名称不能为空'),
-  description: z.string().min(1, '景点描述不能为空'),
-  images: z.string().min(1, '至少需要一张图片'),
-  address: z.string().min(1, '地址不能为空').optional().or(z.literal('')),
-  city: z.string().min(1, '城市不能为空').optional().or(z.literal('')),
-  province: z.string().min(1, '省份不能为空').optional().or(z.literal('')),
-  country: z.string().min(1, '国家不能为空').optional().or(z.literal('')),
-  category: z.string().min(1, '分类不能为空').optional().or(z.literal('')),
-  price: z.string().min(1, '价格不能为空').optional().or(z.literal('')),
-  openingHours: z.string().optional().or(z.literal('')),
-  contact: z.string().optional().or(z.literal('')),
-  website: z.string().url('网站URL格式不正确').optional().or(z.literal('')),
-  location: z.object({
-    lat: z.string().min(1, '纬度不能为空'),
-    lng: z.string().min(1, '经度不能为空'),
-  }),
-});
+import { attractionFormSchema } from '@/types/dtos';
 
 // 定义 API 数据类型
 type AttractionApiData = {

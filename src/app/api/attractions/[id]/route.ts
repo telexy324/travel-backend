@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth-utils';
+import { attractionBackendSchema } from '@/types/dtos';
 
 // 定义评论创建的数据验证模式
 const createCommentSchema = z.object({
@@ -10,24 +11,24 @@ const createCommentSchema = z.object({
 });
 
 // 定义景点更新的数据验证模式
-const updateAttractionSchema = z.object({
-  name: z.string().min(1, '景点名称不能为空'),
-  description: z.string().min(1, '景点描述不能为空'),
-  images: z.array(z.string()),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  province: z.string().optional(),
-  country: z.string().optional(),
-  category: z.string().optional(),
-  price: z.number().min(0, '价格不能为负数').optional(),
-  openingHours: z.string().optional(),
-  contact: z.string().optional(),
-  website: z.string().url('网站URL格式不正确').optional(),
-  location: z.object({
-    lat: z.number(),
-    lng: z.number(),
-  }),
-});
+// const updateAttractionSchema = z.object({
+//   name: z.string().min(1, '景点名称不能为空'),
+//   description: z.string().min(1, '景点描述不能为空'),
+//   images: z.array(z.string()),
+//   address: z.string().optional(),
+//   city: z.string().optional(),
+//   province: z.string().optional(),
+//   country: z.string().optional(),
+//   category: z.string().optional(),
+//   price: z.number().min(0, '价格不能为负数').optional(),
+//   openingHours: z.string().optional(),
+//   contact: z.string().optional(),
+//   website: z.string().url('网站URL格式不正确').optional(),
+//   location: z.object({
+//     lat: z.number(),
+//     lng: z.number(),
+//   }),
+// });
 
 export async function GET(
   request: NextRequest,
@@ -94,7 +95,7 @@ export async function PUT(
 
     const body = await request.json();
     // 验证数据
-    const validatedData = updateAttractionSchema.parse(body);
+    const validatedData = attractionBackendSchema.parse(body);
     // 检查景点是否存在
     const existingAttraction = await prisma.attraction.findUnique({
       where: { id: params.id },
