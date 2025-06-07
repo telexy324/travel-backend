@@ -3,23 +3,12 @@ import Google from 'next-auth/providers/google';
 import GitHub from 'next-auth/providers/github';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@/lib/prisma';
-import { authOptions } from '@/lib/auth';
 
 export const {
   handlers: { GET, POST },
   auth,
   signIn,
   signOut,
-} = NextAuth({
-  adapter: PrismaAdapter(prisma),
-  ...authOptions,
-});
-
-export const {
-  handlers: { GET: authGET, POST: authPOST },
-  auth: authAuth,
-  signIn: authSignIn,
-  signOut: authSignOut,
 } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: {
@@ -41,13 +30,6 @@ export const {
     GitHub({
       clientId: process.env.GITHUB_ID!,
       clientSecret: process.env.GITHUB_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
     }),
   ],
   pages: {
@@ -65,14 +47,14 @@ export const {
       }
     },
     async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string;
+      if (session.user && token.sub) {
+        session.user.id = token.sub;
       }
       return session;
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
+        token.sub = user.id;
         token.email = user.email;
       }
       return token;
