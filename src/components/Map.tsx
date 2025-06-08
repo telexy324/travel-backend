@@ -24,18 +24,39 @@ interface Attraction {
   };
 }
 
+interface AttractionsResponse {
+  success: boolean;
+  message?: string;
+  data: {
+    items: Attraction[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
 interface MapProps {
   initialCenter?: [number, number];
   initialZoom?: number;
 }
 
 // 获取景点数据的函数
-async function fetchAttractions() {
-  const response = await fetch('/api/attractions');
-  if (!response.ok) {
-    throw new Error('获取景点数据失败');
+async function fetchAttractions(): Promise<Attraction[]> {
+  try {
+    const response = await fetch('/api/attractions');
+    if (!response.ok) {
+      throw new Error('获取景点数据失败');
+    }
+    const data: AttractionsResponse = await response.json();
+    if (!data.success || !data.data?.items) {
+      throw new Error('景点数据格式错误');
+    }
+    return data.data.items;
+  } catch (error) {
+    console.error('获取景点数据失败:', error);
+    return [];
   }
-  return response.json();
 }
 
 export function Map({ initialCenter = [116.397428, 39.90923], initialZoom = 12 }: MapProps) {

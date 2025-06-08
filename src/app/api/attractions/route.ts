@@ -1,43 +1,11 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils';
-import { Attraction, AttractionsResponse } from '@/types/responses';
+import { Attraction, Location } from '@/types/responses';
 import { attractionSchema } from '@/types/dtos';
 import { auth } from '@/auth';
 
-type PrismaAttraction = {
-  id: string;
-  name: string;
-  description: string;
-  images: string[];
-  address: string;
-  city: string;
-  province: string;
-  country: string;
-  category: string;
-  price: number;
-  openingHours: string | null;
-  contact: string | null;
-  website: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  location: {
-    lat: number;
-    lng: number;
-  } | null;
-  createdById: string;
-  _count: {
-    visitedBy: number;
-    wantToVisitBy: number;
-  };
-  createdBy: {
-    id: string;
-    name: string | null;
-    image: string | null;
-  };
-};
-
-function formatAttraction(attraction: PrismaAttraction): Attraction {
+function formatAttraction(attraction: any): Attraction {
   return {
     id: attraction.id,
     name: attraction.name,
@@ -56,8 +24,8 @@ function formatAttraction(attraction: PrismaAttraction): Attraction {
     updatedAt: attraction.updatedAt.toISOString(),
     location: attraction.location ? {
       geo: {
-        latitude: attraction.location.lat,
-        longitude: attraction.location.lng,
+        latitude: attraction.location.geo.coordinates[1],
+        longitude: attraction.location.geo.coordinates[0],
       },
     } : null,
     _count: attraction._count,
@@ -74,6 +42,11 @@ export async function GET(request: NextRequest) {
 
     const [attractions, total] = await Promise.all([
       prisma.attraction.findMany({
+        where: {
+          location: {
+            isNot: null, // 只获取有位置数据的景点
+          },
+        },
         skip,
         take: limit,
         include: {
@@ -90,28 +63,75 @@ export async function GET(request: NextRequest) {
               image: true,
             },
           },
+          location: true,
         },
         orderBy: {
           createdAt: 'desc',
         },
-      }) as Promise<PrismaAttraction[]>,
+      }),
       prisma.attraction.count(),
     ]);
 
     const formattedAttractions = attractions.map(formatAttraction);
 
-    const response: AttractionsResponse = {
-      success: true,
-      data: {
-        items: formattedAttractions,
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    // 如果提供了地理位置参数，使用原始 SQL 查询位置数据
+    const queryLat = searchParams.get('lat');
+    const queryLng = searchParams.get('lng');
+    const queryRadius = searchParams.get('radius');
+    if (queryLat && queryLng && queryRadius) {
+      const lat = parseFloat(queryLng);
+      const lng = parseFloat(queryLng);
+      const radius = parseFloat(queryRadius);
+      const locations = await prisma.$queryRaw<Location[]>`Add commentMore actions
+        SELECT 
+          a.id,
+          json_build_object(
+            'geo', json_build_object(
+              'latitude', ST_Y(l.geo::geometry),
+              'longitude', ST_X(l.geo::geometry)
+            )
+          ) as location
+        FROM "Attraction" a
+        INNER JOIN "Location" l ON a.id = l."attractionId"
+        WHERE ST_DWithin(
+          l.geo::geography,
+          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+          ${radius * 1000}
+        )
+      `;
+      // 合并位置数据到景点信息中Add commentMore actions
+      const locationMap = new Map(locations.map((loc: Location) => [loc.id, loc.geo]));
+      attractions.forEach((attraction) => {
+        attraction.location = locationMap.get(attraction.id) || null;
+      });
+    } else {
+      // 如果没有地理位置参数，获取所有景点的位置数据
+      const locations = await prisma.$queryRaw<Location[]>`
+        SELECT 
+          a.id,
+          json_build_object(
+            'geo', json_build_object(
+              'latitude', ST_Y(l.geo::geometry),
+              'longitude', ST_X(l.geo::geometry)
+            )
+          ) as location
+        FROM "Attraction" a
+        INNER JOIN "Location" l ON a.id = l."attractionId"
+      `;
+      // 合并位置数据到景点信息中
+      const locationMap = new Map(locations.map((loc: Location) => [loc.id, loc.geo]));
+      attractions.forEach((attraction) => {
+        attraction.location = locationMap.get(attraction.id) || null;
+      });
+    }
 
-    return successResponse(response);
+    return successResponse({
+      items: formattedAttractions,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (error) {
     return handleApiError(error);
   }
@@ -128,15 +148,27 @@ export async function POST(request: NextRequest) {
     const json = await request.json();
     const data = attractionSchema.parse(json);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const attraction = await prisma.$transaction(async (tx: any) => {
+    const attraction = await prisma.$transaction(async (tx) => {
+      // 创建景点
       const newAttraction = await tx.attraction.create({
         data: {
-          ...data,
+          name: data.name,
+          description: data.description,
+          images: data.images,
+          address: data.address,
+          city: data.city,
+          province: data.province,
+          country: data.country,
+          category: data.category,
+          price: data.price,
+          openingHours: data.openingHours,
+          contact: data.contact,
+          website: data.website,
           createdById: userId,
         },
       });
 
+      // 如果有位置信息，创建位置记录
       if (data.location) {
         await tx.$executeRaw`
           INSERT INTO "Location" ("id", "attractionId", "geo")
@@ -148,6 +180,7 @@ export async function POST(request: NextRequest) {
         `;
       }
 
+      // 获取完整的景点信息，包括位置
       return tx.attraction.findUnique({
         where: { id: newAttraction.id },
         include: {
@@ -164,9 +197,14 @@ export async function POST(request: NextRequest) {
               image: true,
             },
           },
+          location: true,
         },
       });
-    }) as PrismaAttraction;
+    });
+
+    if (!attraction) {
+      throw new Error('创建景点失败');
+    }
 
     const formattedAttraction = formatAttraction(attraction);
 
