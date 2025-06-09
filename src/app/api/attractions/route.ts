@@ -5,6 +5,18 @@ import { Attraction, Location } from '@/types/responses';
 import { attractionSchema } from '@/types/dtos';
 import { auth } from '@/auth';
 
+interface LocationData {
+  geo: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface LocationQueryResult {
+  id: string;
+  location: LocationData;
+}
+
 function formatAttraction(attraction: any): Attraction {
   return {
     id: attraction.id,
@@ -63,7 +75,7 @@ export async function GET(request: NextRequest) {
               image: true,
             },
           },
-          location: true,
+          // location: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -73,6 +85,10 @@ export async function GET(request: NextRequest) {
     ]);
 
     const formattedAttractions = attractions.map(formatAttraction);
+    const attractionsWithLocation: Attraction[] = formattedAttractions.map(attraction => ({
+      ...attraction,
+      location: null, // 初始化为 null，后续会被更新
+    }));
 
     // 如果提供了地理位置参数，使用原始 SQL 查询位置数据
     const queryLat = searchParams.get('lat');
@@ -82,7 +98,7 @@ export async function GET(request: NextRequest) {
       const lat = parseFloat(queryLng);
       const lng = parseFloat(queryLng);
       const radius = parseFloat(queryRadius);
-      const locations = await prisma.$queryRaw<Location[]>`Add commentMore actions
+      const locations = await prisma.$queryRaw<LocationQueryResult[]>`Add commentMore actions
         SELECT 
           a.id,
           json_build_object(
@@ -100,13 +116,13 @@ export async function GET(request: NextRequest) {
         )
       `;
       // 合并位置数据到景点信息中Add commentMore actions
-      const locationMap = new Map(locations.map((loc: Location) => [loc.id, loc.geo]));
-      attractions.forEach((attraction) => {
+      const locationMap = new Map(locations.map((loc: LocationQueryResult) => [loc.id, loc.location]));
+      attractionsWithLocation.forEach((attraction) => {
         attraction.location = locationMap.get(attraction.id) || null;
       });
     } else {
       // 如果没有地理位置参数，获取所有景点的位置数据
-      const locations = await prisma.$queryRaw<Location[]>`
+      const locations = await prisma.$queryRaw<LocationQueryResult[]>`
         SELECT 
           a.id,
           json_build_object(
@@ -119,14 +135,14 @@ export async function GET(request: NextRequest) {
         INNER JOIN "Location" l ON a.id = l."attractionId"
       `;
       // 合并位置数据到景点信息中
-      const locationMap = new Map(locations.map((loc: Location) => [loc.id, loc.geo]));
-      attractions.forEach((attraction) => {
+      const locationMap = new Map(locations.map((loc: LocationQueryResult) => [loc.id, loc.location]));
+      attractionsWithLocation.forEach((attraction) => {
         attraction.location = locationMap.get(attraction.id) || null;
       });
     }
 
     return successResponse({
-      items: formattedAttractions,
+      items: attractionsWithLocation,
       total,
       page,
       limit,
