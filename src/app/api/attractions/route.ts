@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils';
-import { Attraction, Location } from '@/types/responses';
+import { Attraction } from '@/types/responses';
 import { attractionSchema } from '@/types/dtos';
 import { auth } from '@/auth';
 

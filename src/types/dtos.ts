@@ -5,11 +5,11 @@ export const attractionSchema = z.object({
   name: z.string().min(1, '景点名称不能为空'),
   description: z.string().min(1, '景点描述不能为空'),
   images: z.array(z.string()).min(1, '至少需要一张图片'),
-  address: z.string().min(1, '地址不能为空'),
-  city: z.string().min(1, '城市不能为空'),
-  province: z.string().min(1, '省份不能为空'),
-  country: z.string().min(1, '国家不能为空'),
-  category: z.string().min(1, '分类不能为空'),
+  address: z.string().min(1, '地址不能为空').optional().or(z.literal('')),
+  city: z.string().min(1, '城市不能为空').optional().or(z.literal('')),
+  province: z.string().min(1, '省份不能为空').optional().or(z.literal('')),
+  country: z.string().min(1, '国家不能为空').optional().or(z.literal('')),
+  category: z.string().min(1, '分类不能为空').optional().or(z.literal('')),
   price: z.number().min(0, '价格不能为负数'),
   location: z.object({
     geo: z.object({
@@ -17,9 +17,9 @@ export const attractionSchema = z.object({
       longitude: z.number(),
     }),
   }).optional(),
-  openingHours: z.string().optional(),
-  contact: z.string().optional(),
-  website: z.string().url('网站URL格式不正确').optional(),
+  openingHours: z.string().optional().or(z.literal('')),
+  contact: z.string().optional().or(z.literal('')),
+  website: z.string().url('网站URL格式不正确').optional().or(z.literal('')),
 });
 
 export const updateAttractionSchema = attractionSchema.partial();
