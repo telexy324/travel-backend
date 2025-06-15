@@ -1,14 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { attractionSchema } from '@/types/dtos';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }
 ) {
+  const { id } = await params;
   try {
-    const id = params.id;
     // 先查主表和 location 关联
     const attraction = await prisma.attraction.findUnique({
       where: { id },
@@ -54,8 +54,9 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }
 ) {
+  const { id } = await params;
   try {
     const session = await auth();
     if (!session?.user) {
@@ -64,7 +65,6 @@ export async function PUT(
         { status: 401 }
       );
     }
-    const id = params.id;
     // 权限校验
     const attractionForAuth = await prisma.attraction.findUnique({
       where: { id },
@@ -104,7 +104,7 @@ export async function PUT(
       `;
     }
     // 返回最新数据
-    return await GET(request, { params });
+    return await GET(request, { params: { id } });
   } catch (error) {
     console.error('更新景点失败:', error);
     return NextResponse.json(
@@ -116,8 +116,9 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }
 ) {
+  const { id } = await params;
   try {
     const session = await auth();
     if (!session?.user) {
@@ -126,7 +127,6 @@ export async function DELETE(
         { status: 401 }
       );
     }
-    const id = params.id;
     // 权限校验
     const attractionForAuth = await prisma.attraction.findUnique({
       where: { id },
