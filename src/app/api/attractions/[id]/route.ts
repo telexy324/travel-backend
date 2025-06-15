@@ -1,84 +1,18 @@
-import { NextRequest } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils';
-import { Attraction } from '@/types/responses';
-import { updateAttractionSchema } from '@/types/dtos';
+import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-
-type PrismaAttraction = {
-  id: string;
-  name: string;
-  description: string;
-  images: string[];
-  address: string;
-  city: string;
-  province: string;
-  country: string;
-  category: string;
-  price: number;
-  openingHours: string | null;
-  contact: string | null;
-  website: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  location: {
-    lat: number;
-    lng: number;
-  } | null;
-  createdById: string;
-  _count: {
-    visitedBy: number;
-    wantToVisitBy: number;
-  };
-  createdBy: {
-    id: string;
-    name: string | null;
-    image: string | null;
-  };
-};
-
-function formatAttraction(attraction: PrismaAttraction): Attraction {
-  return {
-    id: attraction.id,
-    name: attraction.name,
-    description: attraction.description,
-    images: attraction.images,
-    address: attraction.address,
-    city: attraction.city,
-    province: attraction.province,
-    country: attraction.country,
-    category: attraction.category,
-    price: attraction.price,
-    openingHours: attraction.openingHours,
-    contact: attraction.contact,
-    website: attraction.website,
-    createdAt: attraction.createdAt.toISOString(),
-    updatedAt: attraction.updatedAt.toISOString(),
-    location: attraction.location ? {
-      geo: {
-        latitude: attraction.location.lat,
-        longitude: attraction.location.lng,
-      },
-    } : null,
-    _count: attraction._count,
-    createdBy: attraction.createdBy,
-  };
-}
+import { prisma } from '@/lib/prisma';
+import { attractionSchema } from '@/types/dtos';
+import { Prisma } from '@prisma/client';
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    const id = params.id;
     const attraction = await prisma.attraction.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
-        _count: {
-          select: {
-            visitedBy: true,
-            wantToVisitBy: true,
-          },
-        },
         createdBy: {
           select: {
             id: true,
@@ -86,155 +20,161 @@ export async function GET(
             image: true,
           },
         },
+        _count: {
+          select: {
+            visitedBy: true,
+            wantToVisitBy: true,
+          },
+        },
       },
-    }) as PrismaAttraction | null;
+    });
 
     if (!attraction) {
-      return errorResponse('景点不存在', 404);
+      return NextResponse.json(
+        { success: false, message: '景点不存在' },
+        { status: 404 }
+      );
     }
 
-    return successResponse(formatAttraction(attraction));
+    return NextResponse.json({ success: true, data: attraction });
   } catch (error) {
-    return handleApiError(error);
+    console.error('获取景点详情失败:', error);
+    return NextResponse.json(
+      { success: false, message: '获取景点详情失败' },
+      { status: 500 }
+    );
   }
 }
 
 export async function PUT(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return errorResponse('未授权', 401);
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, message: '未授权' },
+        { status: 401 }
+      );
     }
 
+    const id = params.id;
     const attraction = await prisma.attraction.findUnique({
-      where: { id: params.id },
-      select: { createdById: true },
+      where: { id },
+      select: {
+        createdById: true,
+      },
     });
 
     if (!attraction) {
-      return errorResponse('景点不存在', 404);
+      return NextResponse.json(
+        { success: false, message: '景点不存在' },
+        { status: 404 }
+      );
     }
 
-    if (attraction.createdById !== userId) {
-      return errorResponse('无权修改此景点', 403);
+    if (attraction.createdById !== session.user.id) {
+      return NextResponse.json(
+        { success: false, message: '无权修改此景点' },
+        { status: 403 }
+      );
     }
 
-    const json = await request.json();
-    const data = updateAttractionSchema.parse(json);
+    const body = await request.json();
+    const validatedData = attractionSchema.parse(body);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updatedAttraction = await prisma.$transaction(async (tx: any) => {
-      const attraction = await tx.attraction.update({
-        where: { id: params.id },
-        data: {
-          ...data,
-          location: undefined, // 先清除位置数据
-        },
-        include: {
-          _count: {
-            select: {
-              visitedBy: true,
-              wantToVisitBy: true,
+    const updateData: Prisma.AttractionUpdateInput = {
+      ...validatedData,
+      location: validatedData.location
+        ? {
+            create: {
+              geo: {
+                create: {
+                  latitude: validatedData.location.geo.latitude,
+                  longitude: validatedData.location.geo.longitude,
+                },
+              },
             },
-          },
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-            },
-          },
-        },
-      });
+          }
+        : undefined,
+    };
 
-      if (data.location) {
-        // 删除旧的位置数据
-        await tx.$executeRaw`
-          DELETE FROM "Location"
-          WHERE "attractionId" = ${params.id}
-        `;
-
-        // 插入新的位置数据
-        await tx.$executeRaw`
-          INSERT INTO "Location" ("id", "attractionId", "geo")
-          VALUES (
-            ${crypto.randomUUID()},
-            ${params.id},
-            ST_SetSRID(ST_MakePoint(${data.location.geo.longitude}, ${data.location.geo.latitude}), 4326)
-          )
-        `;
-      }
-
-      return tx.attraction.findUnique({
-        where: { id: params.id },
-        include: {
-          _count: {
-            select: {
-              visitedBy: true,
-              wantToVisitBy: true,
-            },
-          },
-          createdBy: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-            },
+    const updatedAttraction = await prisma.attraction.update({
+      where: { id },
+      data: updateData,
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
           },
         },
-      });
-    }) as PrismaAttraction;
+        _count: {
+          select: {
+            visitedBy: true,
+            wantToVisitBy: true,
+          },
+        },
+      },
+    });
 
-    return successResponse(formatAttraction(updatedAttraction), '更新成功');
+    return NextResponse.json({ success: true, data: updatedAttraction });
   } catch (error) {
-    return handleApiError(error);
+    console.error('更新景点失败:', error);
+    return NextResponse.json(
+      { success: false, message: '更新景点失败' },
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return errorResponse('未授权', 401);
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, message: '未授权' },
+        { status: 401 }
+      );
     }
 
+    const id = params.id;
     const attraction = await prisma.attraction.findUnique({
-      where: { id: params.id },
-      select: { createdById: true },
+      where: { id },
+      select: {
+        createdById: true,
+      },
     });
 
     if (!attraction) {
-      return errorResponse('景点不存在', 404);
+      return NextResponse.json(
+        { success: false, message: '景点不存在' },
+        { status: 404 }
+      );
     }
 
-    if (attraction.createdById !== userId) {
-      return errorResponse('无权删除此景点', 403);
+    if (attraction.createdById !== session.user.id) {
+      return NextResponse.json(
+        { success: false, message: '无权删除此景点' },
+        { status: 403 }
+      );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await prisma.$transaction(async (tx: any) => {
-      // 先删除位置数据
-      await tx.$executeRaw`
-        DELETE FROM "Location"
-        WHERE "attractionId" = ${params.id}
-      `;
-
-      // 再删除景点数据
-      await tx.attraction.delete({
-        where: { id: params.id },
-      });
+    await prisma.attraction.delete({
+      where: { id },
     });
 
-    return successResponse(null, '删除成功');
+    return NextResponse.json({ success: true });
   } catch (error) {
-    return handleApiError(error);
+    console.error('删除景点失败:', error);
+    return NextResponse.json(
+      { success: false, message: '删除景点失败' },
+      { status: 500 }
+    );
   }
 } 

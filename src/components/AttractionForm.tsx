@@ -17,15 +17,26 @@ interface AttractionFormProps {
 
 export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { register, handleSubmit, formState: { errors } } = useForm<AttractionFormData>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<AttractionFormData>({
     resolver: zodResolver(attractionSchema),
     defaultValues: attraction ? {
-      ...attraction,
-      price: attraction.price.toString(),
-      images: attraction.images.join(','),
+      name: attraction.name,
+      description: attraction.description,
+      images: attraction.images,
+      price: attraction.price,
+      address: attraction.address,
+      city: attraction.city,
+      province: attraction.province,
+      country: attraction.country,
+      category: attraction.category,
+      openingHours: attraction.openingHours || undefined,
+      contact: attraction.contact || undefined,
+      website: attraction.website || undefined,
       location: attraction.location ? {
-        lat: attraction.location.geo.latitude.toString(),
-        lng: attraction.location.geo.longitude.toString(),
+        geo: {
+          latitude: attraction.location.geo.latitude,
+          longitude: attraction.location.geo.longitude,
+        },
       } : undefined,
     } : undefined,
   });
@@ -40,10 +51,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            ...data,
-            images: data.images.split(',').map((url: string) => url.trim()),
-          }),
+          body: JSON.stringify(data),
         }
       );
 
@@ -58,6 +66,11 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const urls = e.target.value.split(',').map(url => url.trim()).filter(url => url);
+    setValue('images', urls);
   };
 
   return (
@@ -81,7 +94,10 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
 
         <div>
           <label className="block text-sm font-medium mb-1">图片URL（用逗号分隔）</label>
-          <Input {...register('images')} />
+          <Input 
+            onChange={handleImagesChange}
+            defaultValue={attraction?.images.join(',')}
+          />
           {errors.images && (
             <p className="text-red-500 text-sm mt-1">{errors.images.message}</p>
           )}
@@ -132,7 +148,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
 
           <div>
             <label className="block text-sm font-medium mb-1">价格</label>
-            <Input type="number" step="0.01" {...register('price')} />
+            <Input type="number" step="0.01" {...register('price', { valueAsNumber: true })} />
             {errors.price && (
               <p className="text-red-500 text-sm mt-1">{errors.price.message}</p>
             )}
@@ -142,7 +158,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">纬度</label>
-            <Input type="number" step="0.000001" {...register('location.geo.latitude')} />
+            <Input type="number" step="0.000001" {...register('location.geo.latitude', { valueAsNumber: true })} />
             {errors.location?.geo?.latitude && (
               <p className="text-red-500 text-sm mt-1">{errors.location.geo.latitude.message}</p>
             )}
@@ -150,7 +166,7 @@ export function AttractionForm({ attraction, onSuccess }: AttractionFormProps) {
 
           <div>
             <label className="block text-sm font-medium mb-1">经度</label>
-            <Input type="number" step="0.000001" {...register('location.geo.longitude')} />
+            <Input type="number" step="0.000001" {...register('location.geo.longitude', { valueAsNumber: true })} />
             {errors.location?.geo?.longitude && (
               <p className="text-red-500 text-sm mt-1">{errors.location.geo.longitude.message}</p>
             )}
